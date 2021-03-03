@@ -16,6 +16,6 @@
       }
     },
       "include": ["./src/**/*", "jest.config.js"],
-      "exclude": ["node_modules", "admin_page"]
+      "exclude": ["node_modules"]
   }
   

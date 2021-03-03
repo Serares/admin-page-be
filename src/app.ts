@@ -1,11 +1,12 @@
 import express, { Request, Response, NextFunction } from "express";
 import session from "express-session";
+import { createProxyMiddleware } from "http-proxy-middleware";
 import MongoDBStore from "connect-mongodb-session";
-import { MONGO_DB, MONGO_DB_SESSION_DB, S3_BUCKET } from "./utils/secrets";
-import s3proxy from "s3-proxy";
+import { MONGO_DB, MONGO_DB_SESSION_DB, GCS_BUCKET } from "./utils/secrets";
 import bodyParser from 'body-parser';
 import { AuthRouter } from './routes/auth';
 import { PropertiesRouter } from './routes/properties';
+import CustomError from "./classes/CustomError";
 
 export class App {
     private _MongoURI: string = `mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASS}@cluster0-xyshh.mongodb.net/${MONGO_DB}`;
@@ -35,14 +36,15 @@ export class App {
 
         this.config();
 
-        //TODO add the endpoints in separate files
-        this._app.use(this.propertiesRouter.router);
+        // this._app.use(this.propertiesRouter.router);
         // AUTH ENDPOINTS
         this._app.use(this.authRouter.router);
     }
 
     private config(): void {
         this._app.use(bodyParser.json());
+
+        this._app.set("trust proxy", true);
 
         const tomorrowDate = new Date();
         tomorrowDate.setDate(new Date().getDate() + 1);
@@ -74,22 +76,21 @@ export class App {
             next();
         });
 
-        this._app.get("/images/*", s3proxy({
-            bucket: S3_BUCKET,
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-            overrideCacheControl: "max-age=2592000"
-        }));
+        // TODO create a proxy to serve files like s3 proxy
+        this._app.use(createProxyMiddleware(
+            "/images",
+            {
+                target: `https://storage.googleapis.com/${GCS_BUCKET}`,
+                changeOrigin: true
+            })
+        );
 
         // TODO add this error handler in error controller
-        this._app.use((error: any, req: Request, res: Response, next: NextFunction) => {
+        this._app.use((error: CustomError, req: Request, res: Response, next: NextFunction) => {
             console.log("Error", error);
-            // res.status(500).render('500', {
-            //     pageTitle: 'Error!',
-            //     path: '/500',
-            //     isAuthenticated: false
-            // });
-            res.status(error.statusCode).json({ message: "Erorare", error: error });
+            console.log("Validation Errors", error.errors);
+
+            res.status(error.statusCode).json({ message: "Error", error: error.message });
         });
     }
 }
